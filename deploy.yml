@@ -1,0 +1,72 @@
+---
+- name: Creating publish profile
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    
+    - name: Place Publish Profile for IIS deployment
+      template:
+        src: templates/pubxml.j2
+        dest: "{{ lookup('env','PWD_FILES') }}iisdeploy.pubxml"
+
+
+- name: Creating folders and source code to IIS
+  hosts: "{{ lookup('env','IIS_SERVER') }}"
+  gather_facts: no
+  tasks:
+    
+    - name: Creating application src folder on IIS
+      ansible.windows.win_file:
+        path: "{{ lookup('env','SRC_APP_PATH') }}"
+        state: directory
+
+    - name: Creating website folder on IIS
+      ansible.windows.win_file:
+        path: "{{ lookup('env','WEB_PATH') }}"
+        state: directory
+
+    - name: Creating application folder on IIS
+      ansible.windows.win_file:
+        path: "{{ lookup('env','WEB_PATH') }}"
+        state: directory
+
+    - name: Copy  source code to src folder on IIS
+      ansible.windows.win_copy:
+        src: "{{ lookup('env','PWD_FILES') }}"
+        dest: "{{ lookup('env','SRC_APP_PATH') }}"
+
+
+    - name: Execute Nuget and download packages from packages.config file
+      ansible.windows.win_command: nuget restore
+      args:
+        chdir: "{{ lookup('env','SRC_APP_PATH') }}"
+    
+    - name: Execute MsBuild and publish to destination WEB_PATH for IIS
+      ansible.windows.win_command: msbuild  /p:DeployOnBuild=true /p:PublishProfile={{ lookup('env','SRC_APP_PATH') }}\\iisdeploy.pubxml
+      args:
+        chdir: "{{ lookup('env','SRC_APP_PATH') }}"
+   
+   
+
+- name: Creating Webpool Site Api
+  hosts: "{{ lookup('env','IIS_SERVER') }}"
+  gather_facts: no
+  tasks:
+
+    - name: Create a new application pool in 'Started' state
+      community.windows.win_iis_webapppool:
+        name: "{{ lookup('env','POOL_NAME') }}"
+        state: started
+
+    - name: Crate IIS site
+      community.windows.win_iis_website:
+        name: "{{ lookup('env','WEB_NAME') }}"
+        state: started
+        port: "{{ lookup('env','WEB_PORT') }}"
+        ip: "{{ lookup('env','WEB_IP') }}"
+        hostname: "{{ lookup('env','WEB_HOSTNAME') }}"
+        application_pool: "{{ lookup('env','POOL_NAME') }}"
+        physical_path: "{{ lookup('env','WEB_PATH') }}"
+        parameters: logfile.directory:{{ lookup('env','WEB_LOG_PATH') }}
+      register: website
+...
